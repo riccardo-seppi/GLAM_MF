@@ -115,7 +115,7 @@ Pk_meas = Pk_measured['power'].real
 Pk_data = [k_measured, Pk_meas]
 Pk_data = np.transpose(Pk_data)
 Pk_dat = pd.DataFrame(Pk_data)
-Pk_dat.to_csv('power/data_'+snap+'_'*realization+'.txt')
+Pk_dat.to_csv('power_spectra/data_'+snap+'_'+realization+'.txt')
 plt.loglog(k_measured, Pk_meas, label='z=%.3g'%redshift)
 plt.loglog(kh, pk_lin[0,:], color='r', label = 'model')
 plt.xlabel('k/h Mpc',fontsize=10)
@@ -139,21 +139,43 @@ sigma8_2= 1./(2.*np.pi**2)*integrate.simps(integrand,k_measured)
 sigma8=np.sqrt(sigma8_2)
 print('sigma8 from catalog = ',sigma8)
 
+'''
 nbins=200
 bins = np.logspace(12.1,14.2,nbins)
 mass_number_tot, mass_bins = histogram(masses, bins=bins)
 mass_bins_average, mass_bins, bin_number = stats.binned_statistic(masses, masses,  bins=bins, statistic='mean')
+'''
+#work on the binned data instead
+infile_binned = 'rebinned_data/'+snap+'_full_sample.csv'
+data_binned = pd.read_csv(infile_binned,dtype=np.float64, skiprows = 1)
+data_tran = np.transpose(data_binned.values)
+print(data_tran)
+#mass_bins = data_binned.values[0]
+mass_bins_average = data_tran[1]
+
+#uncenter mass bins average to get mass intervals
+mass_intervals = np.zeros(len(mass_bins_average)+1)
+mass_intervals[0] = 10**(12.1)
+for i in range(1,len(mass_bins_average)):
+    mass_intervals[i] = 10**((np.log10(mass_bins_average[i])+np.log10(mass_bins_average[i-1]))/2)
+le = len(mass_bins_average)
+mass_intervals[le] = 10**(np.log10(mass_bins_average[le-1]) + (np.log10(mass_bins_average[le-1])-np.log10(mass_bins_average[le-2]))/2)
+print('mass_bins_average = ', mass_bins_average)
+print('mass_intervals = ', mass_intervals)
+
 #calculate Xi from eq 22 of comparat17 paper
 rmax = 50 #Mpc/h
 dr = 0.1 #Mpc/h
 volume = Lbox**3
+print('working on coordinate selections...')
 iselect = (Xcoord > rmax)&(Xcoord< (Lbox-rmax))&(Ycoord > rmax)&(Ycoord< (Lbox-rmax))&(Zcoord > rmax)&(Zcoord< (Lbox-rmax))
 bin_xi3D=np.arange(0, rmax, dr)
 xi_tot=np.zeros((len(mass_bins_average), len(bin_xi3D)-1))
 bias2 = np.zeros(len(mass_bins_average))
-for i in range(len(mass_bins_average)):
-    print(i,'of',len(mass_bins_average))
-    isel_m = (masses>mass_bins[i])&(masses<mass_bins[i+1])
+
+for i in range(le):
+    print(i,'of',le)
+    isel_m = (masses>mass_intervals[i])&(masses<mass_intervals[i+1])
     isel = (iselect)&(isel_m) #(masses>mass_bins[i])&(masses<mass_bins[i+1])
     print('Randoms')
     treeRandoms=t.cKDTree(np.transpose([Xcoord[isel_m],Ycoord[isel_m],Zcoord[isel_m]]),1000.0) 
@@ -174,8 +196,8 @@ for i in range(len(mass_bins_average)):
     #plt.plot(bin_xi3D[1:],xi)
 #    plt.yscale('log')
     #plt.show()
-    rapporto=np.zeros(420)
-    for j in range(420):
+    rapporto=np.zeros(int((rmax - 8)/dr))
+    for j in range(int((rmax -8)/dr)):
         rapporto[j] = xi_tot[i,79+j]/xiR[79+j]
     bias2[i] = np.average(rapporto)
     print(bias2[i])
@@ -193,6 +215,22 @@ outf.write('                     mass_bins\n')
 dftot = pd.DataFrame(mass_bins_average,xi_tot,dtype=float)
 dftot.to_csv(outf)
 outf.close()
+#correlation function plot
+plt.figure()
+plt.plot(bin_xi3D,xi_tot[1,:]*bin_xi3D[1:]**2, label='low mass')
+plt.plot(bin_xi3D,xi_tot[le/2,:]*bin_xi3D[1:]**2, label='intermediate mass')
+plt.plot(bin_xi3D,xi_tot[le-1,:]*bin_xi3D[1:]**2, label='high mass')
+plt.xlim(8,20)
+plt.legend()
+plt.title('Correlation function - GLAM')
+plt.xlabel('Mpc/h',fontsize=10)
+plt.ylabel(r'$r^2\xi(r)$',fontsize=10)
+plt.tight_layout()
+plt.savefig('Correlation_Function/corr_func'+snap+'_'+realization+'_plot.pdf')
+plt.grid(True)
+#plt.show()
+
+#bias plot
 plt.figure()
 plt.plot(mass_bins_average, bias2)
 plt.xscale('log')

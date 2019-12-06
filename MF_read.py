@@ -43,6 +43,7 @@ mass_number_25 = np.zeros((a,b))
 mass_number_50 = np.zeros((a,b))
 mass_number_75 = np.zeros((a,b))
 mass_number_100 = np.zeros((a,b))
+mass_number_tot = np.zeros((a,b))
 i=0
 ncat = 0
 out = open('mass_histogram0'+snap+'.txt','w+')
@@ -52,6 +53,8 @@ out.write('1st line: Mass_Bins   2nd line: dn/dlnM 1st realization  3rd line: dn
 for catalog in glob.glob('/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATALOGS/CatshortV.0'+snap+'.00*.DAT'):
     ncat = ncat+1
     print('reading masses from catalog ', catalog)
+    realization = catalog.split('/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATALOGS/CatshortV.0'+snap+'.0')[1].split('.DAT')[0]
+    print('realization = ', realization)
     data = np.loadtxt(catalog, skiprows=8, dtype=float, unpack=True)
     mass = data[7]
     masses = np.append(masses,mass)	
@@ -78,11 +81,17 @@ for catalog in glob.glob('/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATAL
     mass_bins_average_75, mass_bins, bin_number_75 = stats.binned_statistic(masses_75, masses_75,  bins=bins,     statistic='mean')
     mass_number_tot_100, mass_bins = histogram(masses_100, bins=bins)
     mass_bins_average_100, mass_bins, bin_number_100 = stats.binned_statistic(masses_100, masses_100,  bins=bins,     statistic='mean')
-    number_per_bin = [[mass_bins],[mass_number_tot_25], [mass_number_tot_50], [mass_number_tot_75], [mass_number_tot_100]]
-    number_per_bin = np.transpose(number_per_bin)
+    mass_number_tot_tot, mass_bins = histogram(mass, bins=bins)
+    mass_bins_average_tot, mass_bins, bin_number_tot = stats.binned_statistic(mass, mass,  bins=bins,     statistic='mean')
+ #   number_per_bin = {'mass bin': np.array(mass_bins),'1st Xoff': np.array(mass_number_tot_25), '2nd Xoff': np.array(mass_number_tot_50), '3rd Xoff': np.array(mass_number_tot_75), '4th Xoff': np.array(mass_number_tot_100)}
+    print(list(mass_bins))
+    number_per_bin = (list(mass_bins_average_25), list(mass_number_tot_25), list(mass_number_tot_50), list(mass_number_tot_75), list(mass_number_tot_100), list(mass_number_tot_tot))
+    #number_per_bin = np.transpose(number_per_bin)
   #  print('number per bin\n',number_per_bin)
-    npb_file = pd.DataFrame(number_per_bin, columns = ['mass bin', '1st Xoff', '2nd Xoff', '3rd Xoff', '4th Xoff'])
-    npb_file.to_csv('halos_per_bin/number_per_bin_'+snap+'_0%.d.txt'%ncat)
+    npb_file = pd.DataFrame(data=np.c_[number_per_bin], columns = ['mass bin', '1st Xoff', '2nd Xoff', '3rd Xoff', '4th Xoff', 'full sample'])
+    outfile2 = 'halos_per_bin/number_per_bin_'+snap+'_'+realization+'.txt'
+    npb_file.to_csv(outfile2)
+    #np.savetxt(outfile2, number_per_bin,fmt='%s')    
     #measure dlnM to convert the count to dn/dlnM    
     diff = np.diff(np.log(mass_bins))
     diff = diff[0]
@@ -92,6 +101,7 @@ for catalog in glob.glob('/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATAL
     mass_number_50[i,:] = mass_number_tot_50/(10**9)/diff#*np.log10(np.e)
     mass_number_75[i,:] = mass_number_tot_75/(10**9)/diff#*np.log10(np.e)
     mass_number_100[i,:] = mass_number_tot_100/(10**9)/diff#*np.log10(np.e)
+    mass_number_tot[i,:] = mass_number_tot_tot/(10**9)/diff
     i=i+1
 
 #compute total mass function
@@ -101,7 +111,7 @@ mass_bins_average_tot_sample, mass_bins, bin_number_tot_sample = stats.binned_st
 #divide the number by 10^9 to get the number per (Mpc/h)^3
 mass_number_dn_dlnM = mass_number_tot_sample/(ncat*10**9)/diff
 
-out.write("Here follow 4 mass functions, one for each quartile of the parameter Xoff\n")
+out.write("Here follow 6 mass functions, one for each quartile of the parameter Xoff and then the full realization and the full sample (all realizations)\n")
 out.write('1st quartile\n')
 for i in range(b):
     if(i==(b-1)):
@@ -166,6 +176,21 @@ for i in range(a):
             out.write("%.4g" %(mass_number_100[i,j]))
         else:
             out.write("%.4g," %(mass_number_100[i,j])) 
+    out.write("\n")
+
+out.write("Full realization\n")
+for i in range(b):  
+    if(i==(b-1)):
+       out.write("%.4g" %(mass_bins_average_tot[i]))      
+    else:
+        out.write("%.4g," %(mass_bins_average_tot[i]))
+out.write("\n")
+for i in range(a):
+    for j in range(b):  
+        if(j==(b-1)):
+            out.write("%.4g" %(mass_number_tot[i,j]))
+        else:
+            out.write("%.4g," %(mass_number_tot[i,j])) 
     out.write("\n")
 
 out.write("Full sample\n")
