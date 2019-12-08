@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import sys
 import itertools as IT
+from scipy import interpolate
 
 #define function that rebins data in order to have LIMIT halos in each bin
 def halos_rebin(array,array_mf,limit,bins):
@@ -17,10 +18,25 @@ def halos_rebin(array,array_mf,limit,bins):
     array_mf_new = []
     merged_bins = []
     new_bins =[]
+#in case there are nan values "interpolate"
+#but this should not be the cae, because I always use the same binning
+#and take the bins of the average MF of 45 multiple realizations at a fixed z
+#so basically there is never an empty bin
     for a in range(len(array)):
+        if(np.isnan(bins[a])):
+            print('I am in!!!!')
+            print('cycle ',a)
+            #isel = (bins<=bins[a-1])
+            print(bins[a-2:a+2])
+            #interpol = interpolate.interp1d(bins[isel],bins[isel],fill_value='extrapolate')
+            b=10**(np.log10(bins[a-1])+(np.log10(bins[a-1]) - np.log10(bins[a-2])))
+            #c = interpol(b)
+            #print(b,c)
+            bins[a] = b
+#now start rebinning
         count += array[a]
         density_count += array_mf[a]
-        var += 1
+        var += 1            
         if(count>=limit):
             newbinvalue = 10**((np.log10(bins[a])+np.log10(bins[a-(var-1)]))/2)
             new_bins = np.append(new_bins,newbinvalue) 
@@ -30,6 +46,17 @@ def halos_rebin(array,array_mf,limit,bins):
             count=0
             density_count = 0
             var = 0
+#group the last halos that have been left out
+        if(a==(len(array)-1) and count<limit):
+            if(var==0):
+                newbinvalue = 10**((np.log10(bins[a])+np.log10(bins[a-(var)]))/2)
+                array_mf_new = np.append(np.array([array_mf_new]),np.array([density_count]))            
+            else:
+                newbinvalue = 10**((np.log10(bins[a])+np.log10(bins[a-(var-1)]))/2)
+                array_mf_new = np.append(np.array([array_mf_new]),np.array([density_count/var]))                            
+            new_bins = np.append(new_bins,newbinvalue) 
+            array_new = np.append(np.array([array_new]),np.array([count]))
+            merged_bins = np.append(merged_bins, var) #it tells how many bins have been merged 
 #output1: array with the new halo counts in each bin
 #output2: array with new MF values in the new bins
 #output3: new bin values
@@ -48,12 +75,15 @@ z, Omega0, hubble = cosmo_params
 print(cosmo_params)
 params = {'flat': True, 'H0': hubble*100, 'Om0': Omega0, 'Ob0': 0.049, 'sigma8': 0.828, 'ns': 0.96}
 
-#define the quartiles
+#define the quartiles (values at z=0, kept for each z as well)
 quartiles = np.array([0.05992, 0.1026, 0.159])
+#this reading techinque will be a problem when there is a different number of snapshot 
+#for different z in future works, because the number of lines changes.
+#This will have to be adapted
 mass_data_ = pd.read_csv(infile, skiprows=[0,1,2,3,4,52,99,146,193,240], dtype=np.float64, sep=',')
-print(mass_data_)
+
 mass_data = mass_data_.to_numpy()
-print(mass_data)
+
 mass_bins_pl_1st = np.array(mass_data[0])
 mass_bins_pl_2nd = mass_data[46]
 mass_bins_pl_3rd = mass_data[92]
@@ -67,7 +97,6 @@ mass_functions_75_ = mass_data[93:137]
 mass_functions_100_ = mass_data[139:183]
 mass_functions_real_ = mass_data[185:229]
 mass_function_tot_ = mass_data[231]
-print(type(mass_functions_25_[2]))
 
 #plot total MF
 plt.loglog(mass_bins_pl_tot, mass_function_tot_)
@@ -111,12 +140,12 @@ plt.savefig(outfigure+'mass_functions.pdf')
 plt.show()
 
 #now read the halos_per_bin file, in order to rebin halos to have a significant signal
-#Note (4 dec 2019): make the rebin only on 1 MF and use the same for all the others
-#so that you have always the same number of bins
+#Note: make the rebin only on 1 MF and use the same for all the others
+#so that you have always the same number of bins. Use the total MF at a fixed z
 #this means that in some realizations you might have a lower number of clusters than the
 #limit you have set, but since they are all at the same z this should not be important
 #but we can discuss about this
-infile2 ='halos_per_bin/number_per_bin_'+snap+'_001.txt'
+infile2 ='halos_per_bin/number_per_bin_'+snap+'_all_realizations.txt'
 mass_rebin_file = pd.read_csv(infile2, dtype=np.float64, usecols = [1,2,3,4,5,6])
 #print(mass_rebin_file.values)
 
@@ -127,28 +156,32 @@ halos2=mass_reb_tran[2]
 halos3=mass_reb_tran[3]
 halos4=mass_reb_tran[4]
 halos_real=mass_reb_tran[5] #the index real refers to 'realization': one of the multiple realizations at a fixed z value. I will need it for the bias in MF_bias.py
-print(mass_rebin) 
+#print(mass_rebin) 
 
-#set the limit and define how many new bins you will need for each Xoff value (1 2 3 4)
-limit = 500
 nlines = len(mass_functions_25_[:,0])
-ncols1 = len(halos_rebin(halos1,mass_functions_25_[0,:],limit,mass_bins_pl_1st)[0])
-ncols2 = len(halos_rebin(halos2,mass_functions_50_[0,:],limit,mass_bins_pl_2nd)[0])
-ncols3 = len(halos_rebin(halos3,mass_functions_75_[0,:],limit,mass_bins_pl_3rd)[0])
-ncols4 = len(halos_rebin(halos4,mass_functions_100_[0,:],limit,mass_bins_pl_4th)[0])
-ncols_real = len(halos_rebin(halos_real,mass_functions_real_[0,:],limit,mass_bins_pl_real)[0])
+#set the limit and define how many new bins you will need for each Xoff value (1 2 3 4)
+limit = 1000
+#multiply limit by the number of realizations, because you are working on the total MF
+limit = limit * nlines
+print('len = ', len(halos1),len(mass_bins_pl_1st))
+ncols1 = len(halos_rebin(halos1,mass_functions_25_[0,:],limit,mass_bins_pl_tot)[0])
+ncols2 = len(halos_rebin(halos2,mass_functions_50_[0,:],limit,mass_bins_pl_tot)[0])
+ncols3 = len(halos_rebin(halos3,mass_functions_75_[0,:],limit,mass_bins_pl_tot)[0])
+ncols4 = len(halos_rebin(halos4,mass_functions_100_[0,:],limit,mass_bins_pl_tot)[0])
+ncols_real = len(halos_rebin(halos_real,mass_functions_real_[0,:],limit,mass_bins_pl_tot)[0])
 
-newbins25 = halos_rebin(halos1,mass_functions_25_[0,:],limit,mass_bins_pl_1st)[2]
-newbins50 = halos_rebin(halos2,mass_functions_50_[0,:],limit,mass_bins_pl_2nd)[2]
-newbins75 = halos_rebin(halos3,mass_functions_75_[0,:],limit,mass_bins_pl_3rd)[2]
-newbins100 = halos_rebin(halos4,mass_functions_100_[0,:],limit,mass_bins_pl_4th)[2]
-newbins_real = halos_rebin(halos_real,mass_functions_real_[0,:],limit,mass_bins_pl_real)[2]
+newbins25 = halos_rebin(halos1,mass_functions_25_[0,:],limit,mass_bins_pl_tot)[2]
+newbins50 = halos_rebin(halos2,mass_functions_50_[0,:],limit,mass_bins_pl_tot)[2]
+newbins75 = halos_rebin(halos3,mass_functions_75_[0,:],limit,mass_bins_pl_tot)[2]
+newbins100 = halos_rebin(halos4,mass_functions_100_[0,:],limit,mass_bins_pl_tot)[2]
+newbins_real = halos_rebin(halos_real,mass_functions_real_[0,:],limit,mass_bins_pl_tot)[2]
 
-merged25 = halos_rebin(halos1,mass_functions_25_[0,:],limit,mass_bins_pl_1st)[3]
-merged50 = halos_rebin(halos2,mass_functions_50_[0,:],limit,mass_bins_pl_2nd)[3]
-merged75 = halos_rebin(halos3,mass_functions_75_[0,:],limit,mass_bins_pl_3rd)[3]
-merged100 = halos_rebin(halos4,mass_functions_100_[0,:],limit,mass_bins_pl_4th)[3]
-merged_real = halos_rebin(halos_real,mass_functions_real_[0,:],limit,mass_bins_pl_real)[3]
+
+merged25 = halos_rebin(halos1,mass_functions_25_[0,:],limit,mass_bins_pl_tot)[3]
+merged50 = halos_rebin(halos2,mass_functions_50_[0,:],limit,mass_bins_pl_tot)[3]
+merged75 = halos_rebin(halos3,mass_functions_75_[0,:],limit,mass_bins_pl_tot)[3]
+merged100 = halos_rebin(halos4,mass_functions_100_[0,:],limit,mass_bins_pl_tot)[3]
+merged_real = halos_rebin(halos_real,mass_functions_real_[0,:],limit,mass_bins_pl_tot)[3]
 
 count25 = np.zeros((nlines,ncols1))
 count50 = np.zeros((nlines,ncols2))
@@ -162,30 +195,26 @@ mass_functions_100 = np.zeros((nlines,ncols4))
 mass_functions_real = np.zeros((nlines,ncols_real))
 
 print(nlines)
-print(ncols1)
-print(np.array([halos_rebin(halos1,mass_functions_25_[0,:],limit,mass_bins_pl_1st)[1]]).shape)
+print('1st rebin:',ncols1)
+print('4th rebin:',ncols4)
+#print(np.array([halos_rebin(halos1,mass_functions_25_[0,:],limit,mass_bins_pl_1st)[1]]).shape)
 
 #NOW BIN EACH SIMULATION
+#the binning is fixed by halosi, limit, mass_bins_pl_tot
+#all quantities that belong to the total MF.
+#but if I changed those, the new bins would be different for each MF
+#and this would be a problem when I compute the covariance matrix!!!
 for i in range(len(mass_functions_25_[:,0])):
-    #count25 = np.append(count25, np.array([halos_rebin(halos1,mass_functions_25_[i,:],limit)[0]]), axis = 0)
-    count25[i,:] = halos_rebin(halos1,mass_functions_25_[i,:],limit,mass_bins_pl_1st)[0]
-    mass_functions_25[i,:] = halos_rebin(halos1,mass_functions_25_[i,:],limit,mass_bins_pl_1st)[1]
-    #mass_functions_25 = np.append(mass_functions_25, np.array([halos_rebin(halos1,mass_functions_25_[i,:],limit)[1]]),axis = 0)    
-   # count50 = np.append(count50, halos_rebin(halos2,mass_functions_50_[i,:],limit)[0], axis = 0)
-   # mass_functions_50 = np.append(mass_functions_50, halos_rebin(halos2,mass_functions_50_[i,:],limit)[1], axis = 0)    
-   # count75 = np.append(count75, halos_rebin(halos3,mass_functions_75_[i,:],limit)[0], axis = 0)
-   # mass_functions_75 = np.append(mass_functions_75, halos_rebin(halos3,mass_functions_75_[i,:],limit)[1], axis = 0)    
-   # count100 = np.append(count100, halos_rebin(halos4,mass_functions_100_[i,:],limit)[0], axis = 0)
-   # mass_functions_100 = np.append(mass_functions_100, halos_rebin(halos4,mass_functions_100_[i,:],limit)[1], axis = 0)
-#mass_functions_25 = np.c_[mass_functions_25]
-    count50[i,:] = halos_rebin(halos2,mass_functions_50_[i,:],limit,mass_bins_pl_2nd)[0]
-    mass_functions_50[i,:] = halos_rebin(halos2,mass_functions_50_[i,:],limit,mass_bins_pl_2nd)[1]
-    count75[i,:] = halos_rebin(halos3,mass_functions_75_[i,:],limit,mass_bins_pl_3rd)[0]
-    mass_functions_75[i,:] = halos_rebin(halos3,mass_functions_75_[i,:],limit,mass_bins_pl_3rd)[1]
-    count100[i,:] = halos_rebin(halos4,mass_functions_100_[i,:],limit,mass_bins_pl_4th)[0]
-    mass_functions_100[i,:] = halos_rebin(halos4,mass_functions_100_[i,:],limit,mass_bins_pl_4th)[1]
-    count_real[i,:] = halos_rebin(halos_real,mass_functions_real_[i,:],limit,mass_bins_pl_real)[0]
-    mass_functions_real[i,:] = halos_rebin(halos_real,mass_functions_real_[i,:],limit,mass_bins_pl_real)[1]
+    count25[i,:] = halos_rebin(halos1,mass_functions_25_[i,:],limit,mass_bins_pl_tot)[0]
+    mass_functions_25[i,:] = halos_rebin(halos1,mass_functions_25_[i,:],limit,mass_bins_pl_tot)[1]
+    count50[i,:] = halos_rebin(halos2,mass_functions_50_[i,:],limit,mass_bins_pl_tot)[0]
+    mass_functions_50[i,:] = halos_rebin(halos2,mass_functions_50_[i,:],limit,mass_bins_pl_tot)[1]
+    count75[i,:] = halos_rebin(halos3,mass_functions_75_[i,:],limit,mass_bins_pl_tot)[0]
+    mass_functions_75[i,:] = halos_rebin(halos3,mass_functions_75_[i,:],limit,mass_bins_pl_tot)[1]
+    count100[i,:] = halos_rebin(halos4,mass_functions_100_[i,:],limit,mass_bins_pl_tot)[0]
+    mass_functions_100[i,:] = halos_rebin(halos4,mass_functions_100_[i,:],limit,mass_bins_pl_tot)[1]
+    count_real[i,:] = halos_rebin(halos_real,mass_functions_real_[i,:],limit,mass_bins_pl_tot)[0]
+    mass_functions_real[i,:] = halos_rebin(halos_real,mass_functions_real_[i,:],limit,mass_bins_pl_tot)[1]
 print(mass_functions_25)    
 
 #save to a file the rebinned data
@@ -246,9 +275,9 @@ np.savetxt(outfile+'covariance_75.txt',covariance_matrix_75, fmt='%.5g')
 np.savetxt(outfile+'covariance_100.txt',covariance_matrix_100, fmt='%.5g')
 
 #plot covariance matrix
-extent1 = [newbins25[0],newbins25[ncols1-1],newbins25[0],newbins25[ncols1-1]]
-extent2 = [newbins50[0],newbins50[ncols2-1],newbins50[0],newbins50[ncols2-1]]
-extent3 = [newbins75[0],newbins75[ncols3-1],newbins75[0],newbins75[ncols3-1]]
+extent1 = [newbins25[0],max(newbins25),newbins25[0],max(newbins25)]
+extent2 = [newbins50[0],max(newbins50),newbins50[0],max(newbins50)]
+extent3 = [newbins75[0],max(newbins75),newbins75[0],max(newbins75)]
 extent4 = [newbins100[0],max(newbins100),newbins100[0],max(newbins100)]
 vmin, vmax = -1.0, 1.0
 #X1,Y1 = np.meshgrid(np.array(newbins25),np.array(newbins25))

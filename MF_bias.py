@@ -51,7 +51,7 @@ plt.legend()
 plt.title('Matter power spectrum')
 plt.ylabel('P(k)',fontsize=10)
 plt.tight_layout()
-plt.show()
+#plt.show()
 
 #obtain Xi lin(r) from P(k)
 pk = interp1d(np.hstack((1e-20,kh.min()/2., kh, kh.max()*2.,1e20)), np.hstack((0.,0.,pk_lin[0],0.,0.)))
@@ -71,7 +71,7 @@ plt.xlabel('Mpc/h',fontsize=10)
 plt.ylabel(r'$r^2\xi(r)$',fontsize=10)
 plt.tight_layout()
 plt.grid(True)
-plt.show()
+#plt.show()
 
 #now work on catalogs - measure P(k) and integrate it to get sigma8
 for catalog in glob.glob('/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATALOGS/CatshortV.0'+snap+'.0'+realization+'.DAT'):
@@ -87,7 +87,7 @@ for catalog in glob.glob('/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATAL
 print(coordinates_mass)
 print('mass = ',masses)
 
-#Now I have a catalog with the poistion of the halos
+#Now I have a catalog with the position of the halos
 #I can put them on a grid, FFT to get deltak and then P(k)
 redshift = z
 #cosmo = cosmology.Planck15
@@ -201,13 +201,8 @@ for i in range(le):
         rapporto[j] = xi_tot[i,79+j]/xiR[79+j]
     bias2[i] = np.average(rapporto)
     print(bias2[i])
- #   xis = append(xis,xi)
-  #  bias2[i] = 1/200 * np.sum(xi/xiR)  
-#    out.write("  M_low   M_high  corr_func\r\n") 
-#    out.write("%.4g %.4g %.4g \r\n" %(mass_bins[i], mass_bins[i+1], xi))
-#    out.close()
-#bias = np.sqrt(bias2)
 
+#save the output
 outf = open('Correlation_Function/corr_func_'+snap+'_'+realization+'.txt','w+')
 outf.write('sigma8   rmax(Mpch)\n')
 outf.write('%.5g  %.2g\n'%(sigma8,rmax))
@@ -217,16 +212,16 @@ dftot.to_csv(outf)
 outf.close()
 #correlation function plot
 plt.figure()
-plt.plot(bin_xi3D,xi_tot[1,:]*bin_xi3D[1:]**2, label='low mass')
-plt.plot(bin_xi3D,xi_tot[le/2,:]*bin_xi3D[1:]**2, label='intermediate mass')
-plt.plot(bin_xi3D,xi_tot[le-1,:]*bin_xi3D[1:]**2, label='high mass')
+plt.plot(bin_xi3D[1:],xi_tot[1,:]*bin_xi3D[1:]**2, label='low mass')
+plt.plot(bin_xi3D[1:],xi_tot[int(le/2),:]*bin_xi3D[1:]**2, label='intermediate mass')
+plt.plot(bin_xi3D[1:],xi_tot[le-1,:]*bin_xi3D[1:]**2, label='high mass')
 plt.xlim(8,20)
 plt.legend()
 plt.title('Correlation function - GLAM')
 plt.xlabel('Mpc/h',fontsize=10)
 plt.ylabel(r'$r^2\xi(r)$',fontsize=10)
 plt.tight_layout()
-plt.savefig('Correlation_Function/corr_func'+snap+'_'+realization+'_plot.pdf')
+plt.savefig('Correlation_Function/corr_func_'+snap+'_'+realization+'_plot.pdf')
 plt.grid(True)
 #plt.show()
 
