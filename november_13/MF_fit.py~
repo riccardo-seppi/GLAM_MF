@@ -1,0 +1,12 @@
+#Riccardo Seppi - MPE - HEG (2019) - 25 October
+#This code reads halo masses from DM simulations
+#builds HMF and fits them to models with fixed cosmological parameters
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+catalog='/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATALOGS/CatshortV.0092.0001.DAT'
+
+data = pd.read_table(catalog)
+print data

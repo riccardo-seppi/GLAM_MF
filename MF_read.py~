@@ -1,0 +1,242 @@
+#Riccardo Seppi - MPE - HEG (2019) - 25 October
+#This code reads halo masses from DM simulations (GLAM)
+#and counts halos in different mass bins, calculates dn/dlnM 
+#and writes bins, counts in each bin, dn/dlnM in an output file
+#This code is intended a step 1 of 3 alonside MF_covariance.py, which computes the covariance matrix of different MFs at the same z and MF_bias.py, which computes the bias in each realization
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import glob
+from scipy import stats
+from scipy import histogram
+import camb
+import hankel
+import sys
+#from hankel import SphericalHankelTransform
+import scipy.spatial.ckdtree as t
+from scipy.interpolate import interp1d
+
+
+snap=sys.argv[1]
+catalog = '/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATALOGS/CatshortV.0'+snap+'.0001.DAT'
+#read here the cosmological parameters
+a = np.loadtxt(catalog, usecols=[2], skiprows=1, max_rows=1, dtype=float)
+z = 1/a - 1
+print('z = ',z)
+Omega0 = np.loadtxt(catalog, usecols=[1], skiprows=3, max_rows=1, dtype=float)
+print('Omega0 = ', Omega0)
+#Omega0DE = np.loadtxt(catalog, usecols=[3], skiprows=3, max_rows=1, dtype=float)
+#print('Omega0DE = ', Omega0DE)
+hubble = np.loadtxt(catalog, usecols=[6], skiprows=3, max_rows=1, dtype=float)
+print('h = ', hubble)
+#params = {'flat': False, 'H0': hubble*100, 'Om0': Omega0, 'Ode0': Omega0DE}
+params = {'flat': True, 'H0': hubble*100, 'Om0': Omega0, 'Ob0': 0.049, 'sigma8': 0.828, 'ns': 0.96}
+
+#read masses of the halos identified by BDM
+print('reading masses from the catalog...')
+masses = []
+Xoff = []
+#I will store each MF in different lines of the following matrixes
+a,b = 45, 199
+mass_number_25 = np.zeros((a,b))
+mass_number_50 = np.zeros((a,b))
+mass_number_75 = np.zeros((a,b))
+mass_number_100 = np.zeros((a,b))
+mass_number_tot = np.zeros((a,b))
+
+i=0
+ncat = 0
+out = open('mass_histogram0'+snap+'.txt','w+')
+out.write("  z   OmegaM  h\r\n") 
+out.write("%.4g %.4g %.4g\r\n" %(z, Omega0, hubble))
+out.write('1st line: Mass_Bins   2nd line: dn/dlnM 1st realization  3rd line: dn/dlnM 2nd realization ... \n')
+for catalog in glob.glob('/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATALOGS/CatshortV.0'+snap+'.00*.DAT'):
+    ncat = ncat+1
+    print('reading masses from catalog ', catalog)
+    realization = catalog.split('/data26s/comparat/simulations/GLAM/1Gpc2000x4000/CATALOGS/CatshortV.0'+snap+'.0')[1].split('.DAT')[0]
+    print('realization = ', realization)
+    data = np.loadtxt(catalog, skiprows=8, dtype=float, unpack=True)
+    mass = data[7]
+    masses = np.append(masses,mass)	
+    Xof = data[15]
+    Xoff = np.append(Xoff,Xof)
+#I fix the Xoff boundaries at z=0. I measured them one time and I report them here
+#so I don't need the quartiles every time
+#    quartiles = np.quantile(Xof, [0.25, 0.50, 0.75, 1.00])
+    quartiles = np.array([0.05992, 0.1026, 0.159])
+    print(quartiles)
+    masses_25 = mass[Xof<=quartiles[0]]
+    masses_50 = mass[(Xof>quartiles[0]) & (Xof<=quartiles[1])] 
+    masses_75 = mass[(Xof>quartiles[1]) & (Xof<=quartiles[2])] 
+    masses_100 = mass[(Xof>quartiles[2])] 
+    #create mass bins and count halos in different bins
+    nbins=200
+    bins = np.logspace(12.1,14.2,nbins)
+    #create histogram and measure mass average in each bin (dn/dlnM will be plotted at that position)
+    mass_number_tot_25, mass_bins = histogram(masses_25, bins=bins)
+    mass_bins_average_25, mass_bins, bin_number_25 = stats.binned_statistic(masses_25, masses_25,  bins=bins,     statistic='mean')
+    mass_number_tot_50, mass_bins = histogram(masses_50, bins=bins)
+    mass_bins_average_50, mass_bins, bin_number_50 = stats.binned_statistic(masses_50, masses_50,  bins=bins,     statistic='mean')
+    mass_number_tot_75, mass_bins = histogram(masses_75, bins=bins)
+    mass_bins_average_75, mass_bins, bin_number_75 = stats.binned_statistic(masses_75, masses_75,  bins=bins,     statistic='mean')
+    mass_number_tot_100, mass_bins = histogram(masses_100, bins=bins)
+    mass_bins_average_100, mass_bins, bin_number_100 = stats.binned_statistic(masses_100, masses_100,  bins=bins,     statistic='mean')
+    mass_number_tot_tot, mass_bins = histogram(mass, bins=bins)
+    mass_bins_average_tot, mass_bins, bin_number_tot = stats.binned_statistic(mass, mass,  bins=bins,     statistic='mean')
+
+    number_per_bin = (list(mass_bins_average_25), list(mass_number_tot_25), list(mass_number_tot_50), list(mass_number_tot_75), list(mass_number_tot_100), list(mass_number_tot_tot))
+#Write everything to file
+    npb_file = pd.DataFrame(data=np.c_[number_per_bin], columns = ['mass bin', '1st Xoff', '2nd Xoff', '3rd Xoff', '4th Xoff', 'full sample'])
+    outfile2 = 'halos_per_bin/number_per_bin_'+snap+'_'+realization+'.txt'
+    npb_file.to_csv(outfile2)
+    
+    #measure dlnM to convert the count to dn/dlnM    
+    diff = np.diff(np.log(mass_bins))
+    diff = diff[0]
+    #the simulation is a cube of 1 Gpc/h...
+    #divide the number by 10^9 to get the number per (Mpc/h)^3
+    mass_number_25[i,:] = mass_number_tot_25/(10**9)/diff#*np.log10(np.e)
+    mass_number_50[i,:] = mass_number_tot_50/(10**9)/diff#*np.log10(np.e)
+    mass_number_75[i,:] = mass_number_tot_75/(10**9)/diff#*np.log10(np.e)
+    mass_number_100[i,:] = mass_number_tot_100/(10**9)/diff#*np.log10(np.e)
+    mass_number_tot[i,:] = mass_number_tot_tot/(10**9)/diff
+    i=i+1
+
+#compute and work on the total mass function (combination of all different realizations at fixed z)
+quartiles = np.array([0.05992, 0.1026, 0.159])
+print('len masses = ', len(masses))
+print('len Xoff = ', len(Xoff))
+
+masses25tot = masses[Xoff<=quartiles[0]]
+masses50tot = masses[(Xoff>quartiles[0]) & (Xoff<=quartiles[1])]
+masses75tot = masses[(Xoff>quartiles[1]) & (Xoff<=quartiles[2])]
+masses100tot = masses[Xoff>quartiles[3]]
+
+nbins=200
+bins = np.logspace(12.1,14.2,nbins)
+
+mass_number_tot_sample25, mass_bins = histogram(masses25tot, bins=bins)
+mass_bins_average_tot_sample25, mass_bins, bin_number_tot_sample25 = stats.binned_statistic(masses25tot, masses25tot, bins=bins, statistic='mean')
+
+mass_number_tot_sample50, mass_bins = histogram(masses50tot, bins=bins)
+mass_bins_average_tot_sample50, mass_bins, bin_number_tot_sample50 = stats.binned_statistic(masses50tot, masses50tot, bins=bins, statistic='mean')
+
+mass_number_tot_sample75, mass_bins = histogram(masses75tot, bins=bins)
+mass_bins_average_tot_sample75, mass_bins, bin_number_tot_sample75 = stats.binned_statistic(masses75tot, masses75tot, bins=bins, statistic='mean')
+
+mass_number_tot_sample100, mass_bins = histogram(masses100tot, bins=bins)
+mass_bins_average_tot_sample100, mass_bins, bin_number_tot_sample100 = stats.binned_statistic(masses100tot, masses100tot, bins=bins, statistic='mean')
+
+mass_number_tot_sample, mass_bins = histogram(masses, bins=bins)
+mass_bins_average_tot_sample, mass_bins, bin_number_tot_sample = stats.binned_statistic(masses, masses, bins=bins, statistic='mean')
+
+number_per_bin_full = (list(mass_bins_average_tot_sample),  list(mass_number_tot_sample25), list(mass_number_tot_sample50), list(mass_number_tot_sample75), list(mass_number_tot_sample100), list(mass_number_tot_sample))
+npb_full_file = pd.DataFrame(data=np.c_[number_per_bin_full], columns = ['mass bin', '1st Xoff', '2nd Xoff', '3rd Xoff', '4th Xoff', 'all realizations'])
+outfile_full = 'halos_per_bin/number_per_bin_'+snap+'_all_realizations.txt'
+npb_full_file.to_csv(outfile_full)
+#the simulation is a cube of 1 Gpc/h...
+#divide the number by 10^9 to get the number per (Mpc/h)^3
+mass_number_dn_dlnM = mass_number_tot_sample/(ncat*10**9)/diff
+
+out.write("Here follow 6 mass functions, one for each quartile of the parameter Xoff and then the full realization and the full sample (all realizations)\n")
+out.write('1st quartile\n')
+for i in range(b):
+    if(i==(b-1)):
+        out.write('bin%.d'%i)
+    else:
+        out.write('bin%.d,'%i)
+out.write('\n')
+for i in range(b):
+    if(i==(b-1)):
+       out.write("%.4g" %(mass_bins_average_25[i]))      
+    else:
+        out.write("%.4g," %(mass_bins_average_25[i]))
+out.write("\n")
+for i in range(a):
+    for j in range(b):  
+        if(j==(b-1)):
+            out.write("%.4g" %(mass_number_25[i,j]))
+        else:
+            out.write("%.4g," %(mass_number_25[i,j]))            
+    out.write("\n")
+
+out.write("2nd quartile\n")
+for i in range(b):  
+    if(i==(b-1)):
+       out.write("%.4g" %(mass_bins_average_50[i]))      
+    else:
+        out.write("%.4g," %(mass_bins_average_50[i]))
+out.write("\n")
+for i in range(a):
+    for j in range(b):  
+        if(j==(b-1)):
+            out.write("%.4g" %(mass_number_50[i,j]))
+        else:
+            out.write("%.4g," %(mass_number_50[i,j])) 
+    out.write("\n")
+
+out.write("3rd quartile\n")
+for i in range(b):  
+    if(i==(b-1)):
+       out.write("%.4g" %(mass_bins_average_75[i]))      
+    else:
+        out.write("%.4g," %(mass_bins_average_75[i]))
+out.write("\n")
+for i in range(a):
+    for j in range(b):  
+        if(j==(b-1)):
+            out.write("%.4g" %(mass_number_75[i,j]))
+        else:
+            out.write("%.4g," %(mass_number_75[i,j])) 
+    out.write("\n")
+
+out.write("4th quartile\n")
+for i in range(b):  
+    if(i==(b-1)):
+       out.write("%.4g" %(mass_bins_average_100[i]))      
+    else:
+        out.write("%.4g," %(mass_bins_average_100[i]))
+out.write("\n")
+for i in range(a):
+    for j in range(b):  
+        if(j==(b-1)):
+            out.write("%.4g" %(mass_number_100[i,j]))
+        else:
+            out.write("%.4g," %(mass_number_100[i,j])) 
+    out.write("\n")
+
+out.write("Full realization\n")
+for i in range(b):  
+    if(i==(b-1)):
+       out.write("%.4g" %(mass_bins_average_tot[i]))      
+    else:
+        out.write("%.4g," %(mass_bins_average_tot[i]))
+out.write("\n")
+for i in range(a):
+    for j in range(b):  
+        if(j==(b-1)):
+            out.write("%.4g" %(mass_number_tot[i,j]))
+        else:
+            out.write("%.4g," %(mass_number_tot[i,j])) 
+    out.write("\n")
+
+out.write("Full sample\n")
+for i in range(b):  
+    if(i==(b-1)):
+       out.write("%.4g" %(mass_bins_average_tot_sample[i]))      
+    else:
+        out.write("%.4g," %(mass_bins_average_tot_sample[i]))
+out.write("\n")
+
+for j in range(b):  
+    if(j==(b-1)):
+        out.write("%.4g" %(mass_number_dn_dlnM[j]))
+    else:
+        out.write("%.4g," %(mass_number_dn_dlnM[j])) 
+out.write("\n")
+
+
+print('Done!')
+
+
