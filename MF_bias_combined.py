@@ -16,10 +16,10 @@ def main():
     for mass_hist in glob.glob('mass_histogram0*.txt'):
         cosmo_params = np.loadtxt(mass_hist, skiprows=1, max_rows=1, dtype=float)
         z, Omega0, hubble = cosmo_params
-        data_ = pd.read_csv(mass_hist,skiprows=[0,1,2,3,4,52,99,146,193,240], dtype=np.float64, sep=',')
+        data_ = pd.read_csv(mass_hist,skiprows=[0,1,2,3,4,51,97,143,189,235], dtype=np.float64, sep=',')
         data = data_.to_numpy()
-        mass_bins = data[230]
-        MF_tot = data[231]
+        mass_bins = data[225]
+        MF_tot = data[226]
         plt.loglog(mass_bins, MF_tot, label='z=%.2f'%z)
         plt.xlabel(r'M $[M_\odot/h]$', fontsize = 20)
         plt.xticks(fontsize=18)
